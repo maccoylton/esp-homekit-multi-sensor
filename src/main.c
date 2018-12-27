@@ -23,17 +23,22 @@
 #include <FreeRTOS.h>
 #include <task.h>
 #include <queue.h>
+#include <string.h>
 
 #include <homekit/homekit.h>
 #include <homekit/characteristics.h>
 #include <dht/dht.h>
+#include <http_post.h>
 
 // add this section to make your device OTA capable
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
 // it can be used in Eve, which will show it, where Home does not
 // and apply the four other parameters in the accessories_information section
 
-#include "ota-api.h"
+#include <ota-api.h>
+
+TaskHandle_t http_post_tasks_handle;
+char accessory_name[64];
 
 homekit_characteristic_t ota_trigger      = API_OTA_TRIGGER;
 homekit_characteristic_t name             = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
@@ -132,6 +137,7 @@ void create_accessory_name() {
     snprintf(name_value, name_len + 1, "%s-%s-%s",
 		 DEVICE_NAME, DEVICE_MODEL, serialNumberValue);
 
+    strcpy (accessory_name, name_value);
    
     name.value = HOMEKIT_STRING(name_value);
     serial.value = name.value;
@@ -157,6 +163,9 @@ void temperature_sensor_task(void *_args) {
             homekit_characteristic_notify(&current_temperature, current_temperature.value);
             homekit_characteristic_notify(&current_relative_humidity, current_relative_humidity.value);
 
+	    snprintf (post_string, 150, "sql=insert into homekit.temperaturesensorlog (TemperatuerSensorName, Temperature) values ('%s', %f)", accessory_name, temperature_value);
+            vTaskResume( http_post_tasks_handle );
+	
         } else {
             printf("Couldnt read data from sensor\n");
         }
@@ -177,7 +186,15 @@ void motion_sensor_callback(uint8_t gpio) {
         new = gpio_read(MOTION_SENSOR_GPIO);
         motion_detected.value = HOMEKIT_BOOL(new);
         homekit_characteristic_notify(&motion_detected, HOMEKIT_BOOL(new));
-        printf("Motion Detected on %d", gpio);
+        if (new == 1) {
+                printf("Motion Detected on %d\n", gpio);
+                snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 1)", accessory_name);
+                vTaskResume( http_post_tasks_handle );
+        } else {
+                printf("Motion Stopped on %d\n", gpio);
+                snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 0)", accessory_name);
+                vTaskResume( http_post_tasks_handle );
+        }
     }
     else {
         printf("Interrupt on %d", gpio);
@@ -204,7 +221,10 @@ void light_sensor_task(void *_args) {
 		//In my case I used a Photodiode Light Sensor 
             currentAmbientLightLevel.value.float_value = (1024 - analog_light_value);
             homekit_characteristic_notify(&currentAmbientLightLevel, HOMEKIT_FLOAT((1024 - analog_light_value)));
-            vTaskDelay(3000 / portTICK_PERIOD_MS);
+            snprintf (post_string, 150, "sql=insert into homekit.lightsensorlog (LightSensorName, LightLevel) values ('%s', %f)", accessory_name, currentAmbientLightLevel.value.float_value);
+            vTaskResume( http_post_tasks_handle );
+
+            vTaskDelay(30000 / portTICK_PERIOD_MS);
     }
 }
 
@@ -228,4 +248,7 @@ void user_init(void) {
         config.accessories[0]->config_number=c_hash;
 
     homekit_server_init(&config);
+
+    xTaskCreate(http_post_task, "http post task", 512, NULL, 2, &http_post_tasks_handle);
+
 }
