@@ -29,6 +29,9 @@
 #include <homekit/characteristics.h>
 #include <dht/dht.h>
 #include <http_post.h>
+#include <button.h>
+
+const int button_gpio = 0;
 
 // add this section to make your device OTA capable
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
@@ -144,8 +147,56 @@ void create_accessory_name() {
 }
 
 
+void reset_configuration_task() {
+    //Flash the LED first before we start the reset
+//    for (int i=0; i<10; i++) {
+//        led_write(true);
+//        vTaskDelay(100 / portTICK_PERIOD_MS);
+//        led_write(false);
+//        vTaskDelay(100 / portTICK_PERIOD_MS);
+//    }
+    
+//    printf("Resetting Wifi Config\n");
+    
+//    wifi_config_reset();
+    
+//    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    
+    printf("Resetting HomeKit Config\n");
+    
+    homekit_server_reset();
+    
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    
+    printf("Restarting\n");
+    
+    sdk_system_restart();
+    
+    vTaskDelete(NULL);
+}
+
+void reset_configuration() {
+    printf("Resetting Sonoff configuration\n");
+    xTaskCreate(reset_configuration_task, "Reset configuration", 256, NULL, 2, NULL);
+}
+
+void button_callback(uint8_t gpio, button_event_t event) {
+    switch (event) {
+        case button_event_single_press:
+	    printf("Button event: %d, doing nothin\n", event);
+            break;
+        case button_event_long_press:
+	    printf("Button event: %d, resetting homekit config\n", event);
+            reset_configuration();
+            break;
+        default:
+            printf("Unknown button event: %d\n", event);
+    }
+}
+
 void temperature_sensor_task(void *_args) {
 
+    int loop_count = 10;
     gpio_set_pullup(TEMPERATURE_SENSOR_PIN, false, false);
 
     float humidity_value, temperature_value;
@@ -163,13 +214,24 @@ void temperature_sensor_task(void *_args) {
             homekit_characteristic_notify(&current_temperature, current_temperature.value);
             homekit_characteristic_notify(&current_relative_humidity, current_relative_humidity.value);
 
-	    snprintf (post_string, 150, "sql=insert into homekit.temperaturesensorlog (TemperatuerSensorName, Temperature) values ('%s', %f)", accessory_name, temperature_value);
-            vTaskResume( http_post_tasks_handle );
+	    if (loop_count == 10) {
+	    	snprintf (post_string, 150, "sql=insert into homekit.temperaturesensorlog (TemperatureSensorName, Temperature) values ('%s', %f)", accessory_name, temperature_value);
+	    	printf ("Post String: %s\n", post_string);
+            	vTaskResume( http_post_tasks_handle );
+	    	loop_count = 0;
+	    }
+
+            if (loop_count == 5) {
+                snprintf (post_string, 150, "sql=insert into homekit.humiditysensorlog (HumiditySensorName, Humidity) values ('%s', %f)", accessory_name, humidity_value);
+                printf ("Post String: %s\n", post_string);
+                vTaskResume( http_post_tasks_handle );
+            }
 	
         } else {
             printf("Couldnt read data from sensor\n");
         }
         vTaskDelay(TEMPERATURE_POLL_PERIOD / portTICK_PERIOD_MS);
+	loop_count++;
     }
 }
 
@@ -189,10 +251,12 @@ void motion_sensor_callback(uint8_t gpio) {
         if (new == 1) {
                 printf("Motion Detected on %d\n", gpio);
                 snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 1)", accessory_name);
+            	printf ("Post String: %s\n", post_string);
                 vTaskResume( http_post_tasks_handle );
         } else {
                 printf("Motion Stopped on %d\n", gpio);
                 snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 0)", accessory_name);
+                printf ("Post String: %s\n", post_string);
                 vTaskResume( http_post_tasks_handle );
         }
     }
@@ -213,6 +277,8 @@ void light_sensor_task(void *_args) {
 
 // thaks to https://github.com/peros550/esp-homekit-multiple-sensors/blob/master/examples/multiple_sensors/multiple_sensors.c
 
+    int loop_count = 10;
+
     uint16_t analog_light_value;
     while (1) {
          analog_light_value = sdk_system_adc_read();
@@ -221,10 +287,15 @@ void light_sensor_task(void *_args) {
 		//In my case I used a Photodiode Light Sensor 
             currentAmbientLightLevel.value.float_value = (1024 - analog_light_value);
             homekit_characteristic_notify(&currentAmbientLightLevel, HOMEKIT_FLOAT((1024 - analog_light_value)));
-            snprintf (post_string, 150, "sql=insert into homekit.lightsensorlog (LightSensorName, LightLevel) values ('%s', %f)", accessory_name, currentAmbientLightLevel.value.float_value);
-            vTaskResume( http_post_tasks_handle );
-
+	    printf ("Light level: %i\n", (1024 - analog_light_value));
+	    if (loop_count == 10){
+            	snprintf (post_string, 150, "sql=insert into homekit.lightsensorlog (LightSensorName, LightLevel) values ('%s', %f)", accessory_name, currentAmbientLightLevel.value.float_value);
+            	printf ("Post String: %s\n", post_string);
+		vTaskResume( http_post_tasks_handle );
+		loop_count = 0;
+	    }
             vTaskDelay(30000 / portTICK_PERIOD_MS);
+	    loop_count ++;
     }
 }
 
@@ -246,6 +317,10 @@ void user_init(void) {
                                       &model.value.string_value,&revision.value.string_value);
     if (c_hash==0) c_hash=1;
         config.accessories[0]->config_number=c_hash;
+
+    if (button_create(button_gpio, 0, 4000, button_callback)) {
+        printf("Failed to initialize button\n");
+    }
 
     homekit_server_init(&config);
 

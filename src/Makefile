@@ -8,7 +8,8 @@ EXTRA_COMPONENTS = \
 	$(abspath ../components/esp-cjson) \
 	$(abspath ../components/esp-homekit) \
         $(abspath ../libs/http_post) \
-	$(abspath ../libs/ota)
+	$(abspath ../libs/ota) \
+        $(abspath ../libs/button)
 
 FLASH_SIZE ?= 8
 HOMEKIT_SPI_FLASH_BASE_ADDR ?= 0x8c000
