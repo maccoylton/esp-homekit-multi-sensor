@@ -10,6 +10,7 @@
 #define DEVICE_MODEL "1"
 #define DEVICE_SERIAL "12345678"
 #define FW_VERSION "1.0"
+#define LED_GPIO 2
 #define MOTION_SENSOR_GPIO 12
 #define TEMPERATURE_SENSOR_PIN 4
 #define TEMPERATURE_POLL_PERIOD 10000
@@ -30,6 +31,8 @@
 #include <dht/dht.h>
 #include <http_post.h>
 #include <button.h>
+#include <led_codes.h>
+
 
 const int button_gpio = 0;
 
@@ -65,6 +68,8 @@ homekit_characteristic_t current_relative_humidity    = HOMEKIT_CHARACTERISTIC_(
 
 
 void identify_task(void *_args) {
+
+    led_code(LED_GPIO, IDENTIFY_ACCESSORY);
     vTaskDelete(NULL);
 }
 
@@ -148,13 +153,8 @@ void create_accessory_name() {
 
 
 void reset_configuration_task() {
-    //Flash the LED first before we start the reset
-//    for (int i=0; i<10; i++) {
-//        led_write(true);
-//        vTaskDelay(100 / portTICK_PERIOD_MS);
-//        led_write(false);
-//        vTaskDelay(100 / portTICK_PERIOD_MS);
-//    }
+
+    led_code(LED_GPIO, WIFI_CONFIG_RESET);
     
 //    printf("Resetting Wifi Config\n");
     
@@ -228,6 +228,7 @@ void temperature_sensor_task(void *_args) {
             }
 	
         } else {
+	led_code (LED_GPIO, SENSOR_ERROR );
             printf("Couldnt read data from sensor\n");
         }
         vTaskDelay(TEMPERATURE_POLL_PERIOD / portTICK_PERIOD_MS);
@@ -261,6 +262,7 @@ void motion_sensor_callback(uint8_t gpio) {
         }
     }
     else {
+        led_code (LED_GPIO, GENERIC_ERROR);
         printf("Interrupt on %d", gpio);
     }
 
@@ -312,6 +314,8 @@ void user_init(void) {
     light_sensor_init();
     motion_sensor_init();
     temperature_sensor_init();
+    gpio_enable(LED_GPIO, GPIO_OUTPUT);
+
 
     int c_hash=ota_read_sysparam(&manufacturer.value.string_value,&serial.value.string_value,
                                       &model.value.string_value,&revision.value.string_value);

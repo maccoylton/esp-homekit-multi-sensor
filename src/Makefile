@@ -9,7 +9,9 @@ EXTRA_COMPONENTS = \
 	$(abspath ../components/esp-homekit) \
         $(abspath ../libs/http_post) \
 	$(abspath ../libs/ota) \
-        $(abspath ../libs/button)
+        $(abspath ../libs/button) \
+        $(abspath ../libs/led_codes) 
+
 
 FLASH_SIZE ?= 8
 HOMEKIT_SPI_FLASH_BASE_ADDR ?= 0x8c000
