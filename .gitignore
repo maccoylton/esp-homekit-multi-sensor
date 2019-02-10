@@ -1,4 +1,4 @@
-esp-homekit-motion-sensor.xcodeproj
+esp-homekit-multi-sensor.xcodeproj
 build/
 firmware/
 src/.DS_Store
