@@ -7,10 +7,11 @@ EXTRA_COMPONENTS = \
 	$(abspath ../components/esp-wolfssl) \
 	$(abspath ../components/esp-cjson) \
 	$(abspath ../components/esp-homekit) \
-        $(abspath ../libs/http_post) \
-	$(abspath ../libs/ota) \
-        $(abspath ../libs/button) \
-        $(abspath ../libs/led_codes) 
+	$(abspath ../components/esp-homekit-common-functions/button)\
+	$(abspath ../components/esp-homekit-common-functions/led_codes)\
+	$(abspath ../components/esp-homekit-common-functions/ota)\
+	$(abspath ../components/esp-homekit-common-functions/custom_characteristics)\
+	$(abspath ../components/esp-homekit-common-functions/http_post)
 
 
 FLASH_SIZE ?= 8
