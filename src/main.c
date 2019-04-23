@@ -1,4 +1,17 @@
 /*
+ * Copyright 2018 David B Brown (@maccoylton)
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
  * Example of using esp-homekit library to control
  * mutiple sensors
  * The use and OTA mechanis created by HomeACcessoryKid
@@ -6,7 +19,7 @@
  */
 
 #define DEVICE_MANUFACTURER "David B Brown"
-#define DEVICE_NAME "Muti-Sensor"
+#define DEVICE_NAME "Multi-Sensor"
 #define DEVICE_MODEL "1"
 #define DEVICE_SERIAL "12345678"
 #define FW_VERSION "1.0"
@@ -37,6 +50,10 @@
 
 
 const int button_gpio = 0;
+
+/* global varibale to support LEDs set to 0 wehre the LED is connected to GND, 1 where +3.3v */
+
+int led_off_value=0;
 
 // add this section to make your device OTA capable
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
@@ -225,7 +242,7 @@ void temperature_sensor_task(void *_args) {
             }
             
         } else {
-            led_code (LED_GPIO, SENSOR_ERROR );
+            led_code (LED_GPIO, SENSOR_ERROR);
             printf("Couldnt read data from sensor DHT22\n");
         }
         vTaskDelay(TEMPERATURE_POLL_PERIOD / portTICK_PERIOD_MS);
@@ -302,14 +319,22 @@ void light_sensor_init() {
     xTaskCreate(light_sensor_task, "Light Sensor", 256, NULL, 2, NULL);
 }
 
+void multi_sensor_init (){
+ 
+    light_sensor_init();
+    motion_sensor_init();
+    temperature_sensor_init();
+    xTaskCreate(http_post_task, "http post task", 512, NULL, 2, &http_post_tasks_handle);
+    gpio_enable(LED_GPIO, GPIO_OUTPUT);
+    gpio_write(LED_GPIO, false);
+    gpio_set_pullup(MOTION_SENSOR_GPIO, false, false);
+}
+
 
 void on_homekit_event(homekit_event_t event) {
-    /* when we get a pairing event then we can start everyrthin up */
+    /* when we get a pairing event then we can start everything up */
     if (event == HOMEKIT_EVENT_PAIRING_ADDED) {
-        light_sensor_init();
-        motion_sensor_init();
-        temperature_sensor_init();
-        xTaskCreate(http_post_task, "http post task", 512, NULL, 2, &http_post_tasks_handle);
+        multi_sensor_init ();
     } else if (event == HOMEKIT_EVENT_PAIRING_REMOVED) {
         if (!homekit_is_paired())
             sdk_system_restart();
@@ -326,11 +351,7 @@ void on_wifi_ready() {
 
     /* if paired then we can initalise everything, otherewise we will wait untill paired */
     if (homekit_is_paired()) {
-        light_sensor_init();
-        motion_sensor_init();
-        temperature_sensor_init();
-        xTaskCreate(http_post_task, "http post task", 512, NULL, 2, &http_post_tasks_handle);
-        gpio_enable(LED_GPIO, GPIO_OUTPUT);
+        multi_sensor_init ();
     }
     
     if (button_create(button_gpio, 0, 4000, button_callback)) {
@@ -347,10 +368,6 @@ void user_init(void) {
     
     create_accessory_name();
 
-/*    gpio_enable(LED_GPIO, GPIO_OUTPUT);
-    gpio_set_pullup(LED_GPIO, false, false);
-*/
-    
     
     int c_hash=ota_read_sysparam(&manufacturer.value.string_value,&serial.value.string_value,
                                  &model.value.string_value,&revision.value.string_value);
