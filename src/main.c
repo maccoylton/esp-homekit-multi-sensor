@@ -45,15 +45,17 @@
 #include <homekit/characteristics.h>
 #include <dht/dht.h>
 #include <http_post.h>
-#include <button.h>
+#include <adv_button.h>
 #include <led_codes.h>
+#include <custom_characteristics.h>
+#include <shared_functions.h>
 
 
-const int button_gpio = 0;
+const int RESET_BUTTON_GPIO = 0;
 
-/* global varibale to support LEDs set to 0 wehre the LED is connected to GND, 1 where +3.3v */
+int led_off_value=0; /* global varibale to support LEDs set to 0 where the LED is connected to GND, 1 where +3.3v */
+const int status_led_gpio = 13; /*set the gloabl variable for the led to be sued for showing status */
 
-int led_off_value=0;
 
 // add this section to make your device OTA capable
 // create the extra characteristic &ota_trigger, at the end of the primary service (before the NULL)
@@ -65,6 +67,7 @@ int led_off_value=0;
 TaskHandle_t http_post_tasks_handle;
 char accessory_name[64];
 
+homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
 homekit_characteristic_t ota_trigger      = API_OTA_TRIGGER;
 homekit_characteristic_t name             = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
 homekit_characteristic_t manufacturer     = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  DEVICE_MANUFACTURER);
@@ -86,17 +89,6 @@ homekit_characteristic_t current_temperature = HOMEKIT_CHARACTERISTIC_( CURRENT_
 homekit_characteristic_t current_relative_humidity    = HOMEKIT_CHARACTERISTIC_( CURRENT_RELATIVE_HUMIDITY, 0 );
 
 
-void identify_task(void *_args) {
-    
-    led_code(LED_GPIO, IDENTIFY_ACCESSORY);
-    vTaskDelete(NULL);
-}
-
-void identify(homekit_value_t _value) {
-    printf("identify\n");
-    xTaskCreate(identify_task, "identify", 128, NULL, 2, NULL);
-}
-
 
 homekit_accessory_t *accessories[] = {
     HOMEKIT_ACCESSORY(.id=1, .category=homekit_accessory_category_switch, .services=(homekit_service_t*[]){
@@ -114,6 +106,7 @@ homekit_accessory_t *accessories[] = {
             &currentAmbientLightLevel,
             &status_active,
             &ota_trigger,
+            &wifi_reset,
             NULL
         }),
         HOMEKIT_SERVICE(MOTION_SENSOR, .primary=true, .characteristics=(homekit_characteristic_t*[]){
@@ -136,77 +129,6 @@ homekit_accessory_t *accessories[] = {
     NULL
 };
 
-
-void create_accessory_name() {
-    
-    int serialLength = snprintf(NULL, 0, "%d", sdk_system_get_chip_id());
-    
-    char *serialNumberValue = malloc(serialLength + 1);
-    
-    snprintf(serialNumberValue, serialLength + 1, "%d", sdk_system_get_chip_id());
-    
-    int name_len = snprintf(NULL, 0, "%s-%s-%s",
-                            DEVICE_NAME,
-                            DEVICE_MODEL,
-                            serialNumberValue);
-    
-    if (name_len > 63) {
-        name_len = 63;
-    }
-    
-    char *name_value = malloc(name_len + 1);
-    
-    snprintf(name_value, name_len + 1, "%s-%s-%s",
-             DEVICE_NAME, DEVICE_MODEL, serialNumberValue);
-    
-    strcpy (accessory_name, name_value);
-    
-    name.value = HOMEKIT_STRING(name_value);
-    serial.value = name.value;
-}
-
-
-void reset_configuration_task() {
-    
-    led_code(LED_GPIO, WIFI_CONFIG_RESET);
-    
-    //    printf("Resetting Wifi Config\n");
-    
-    //    wifi_config_reset();
-    
-    //    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    
-    printf("Resetting HomeKit Config\n");
-    
-    homekit_server_reset();
-    
-    vTaskDelay(1000 / portTICK_PERIOD_MS);
-    
-    printf("Restarting\n");
-    
-    sdk_system_restart();
-    
-    vTaskDelete(NULL);
-}
-
-void reset_configuration() {
-    printf("Resetting Sonoff configuration\n");
-    xTaskCreate(reset_configuration_task, "Reset configuration", 256, NULL, 2, NULL);
-}
-
-void button_callback(uint8_t gpio, button_event_t event) {
-    switch (event) {
-        case button_event_single_press:
-            printf("Button event: %d, doing nothin\n", event);
-            break;
-        case button_event_long_press:
-            printf("Button event: %d, resetting homekit config\n", event);
-            reset_configuration();
-            break;
-        default:
-            printf("Unknown button event: %d\n", event);
-    }
-}
 
 void temperature_sensor_task(void *_args) {
     
@@ -316,29 +238,21 @@ void light_sensor_task(void *_args) {
 }
 
 void light_sensor_init() {
-    xTaskCreate(light_sensor_task, "Light Sensor", 256, NULL, 2, NULL);
+    xTaskCreate(light_sensor_task, "Light Sensor", 512, NULL, 2, NULL);
 }
 
 void multi_sensor_init (){
  
+    xTaskCreate(http_post_task, "http post task", 512, NULL, 2, &http_post_tasks_handle);
+    light_sensor_init();
+    gpio_set_pullup(MOTION_SENSOR_GPIO, false, false);
+    gpio_enable(LED_GPIO, GPIO_OUTPUT);
+    gpio_write(LED_GPIO, false);
+
     light_sensor_init();
     motion_sensor_init();
     temperature_sensor_init();
-    xTaskCreate(http_post_task, "http post task", 512, NULL, 2, &http_post_tasks_handle);
-    gpio_enable(LED_GPIO, GPIO_OUTPUT);
-    gpio_write(LED_GPIO, false);
-    gpio_set_pullup(MOTION_SENSOR_GPIO, false, false);
-}
 
-
-void on_homekit_event(homekit_event_t event) {
-    /* when we get a pairing event then we can start everything up */
-    if (event == HOMEKIT_EVENT_PAIRING_ADDED) {
-        multi_sensor_init ();
-    } else if (event == HOMEKIT_EVENT_PAIRING_REMOVED) {
-        if (!homekit_is_paired())
-            sdk_system_restart();
-    }
 }
 
 homekit_server_config_t config = {
@@ -347,35 +261,27 @@ homekit_server_config_t config = {
     .on_event = on_homekit_event
 };
 
-void on_wifi_ready() {
+void accessory_init (void ){
+    /* initalise anything you don't want started until wifi and pairing is confirmed */
+    multi_sensor_init ();
 
-    /* if paired then we can initalise everything, otherewise we will wait untill paired */
-    if (homekit_is_paired()) {
-        multi_sensor_init ();
-    }
-    
-    if (button_create(button_gpio, 0, 4000, button_callback)) {
-        printf("Failed to initialize button\n");
-    }
-    
-    homekit_server_init(&config);
+}
+
+void accessory_init_not_paired (void) {
+    /* initalise anything you don't want started until wifi and homekit imitialisation is confirmed, but not paired */
 }
 
 
 void user_init(void) {
-    uart_set_baud(0, 115200);
-    
-    
-    create_accessory_name();
 
     
-    int c_hash=ota_read_sysparam(&manufacturer.value.string_value,&serial.value.string_value,
-                                 &model.value.string_value,&revision.value.string_value);
-    if (c_hash==0) c_hash=1;
-    config.accessories[0]->config_number=c_hash;
+    standard_init (&name, &manufacturer, &model, &serial, &revision);
+    strcpy (accessory_name, name.value.string_value);
     
-    /* ensure we have valid wifi settings */
-    
+    adv_button_create(RESET_BUTTON_GPIO, true, false);
+    adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, VERYLONGPRESS_TYPE, NULL, 0);
+
+
     wifi_config_init(DEVICE_NAME, NULL, on_wifi_ready);
 
     
