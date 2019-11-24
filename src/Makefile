@@ -17,7 +17,6 @@ EXTRA_COMPONENTS = \
 	$(abspath ../components/esp-homekit-common-functions/http_post)\
     $(abspath ../components/esp-homekit-common-functions/shared_functions)
 
-
 FLASH_SIZE ?= 8
 FLASH_MODE ?= dout
 FLASH_SPEED ?= 40

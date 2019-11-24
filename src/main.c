@@ -68,6 +68,7 @@ TaskHandle_t http_post_tasks_handle;
 char accessory_name[64];
 
 homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
+homekit_characteristic_t wifi_check_interval   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_CHECK_INTERVAL, 10, .setter=wifi_check_interval_set);
 homekit_characteristic_t ota_trigger      = API_OTA_TRIGGER;
 homekit_characteristic_t name             = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
 homekit_characteristic_t manufacturer     = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  DEVICE_MANUFACTURER);
@@ -107,6 +108,7 @@ homekit_accessory_t *accessories[] = {
             &status_active,
             &ota_trigger,
             &wifi_reset,
+            &wifi_check_interval,
             NULL
         }),
         HOMEKIT_SERVICE(MOTION_SENSOR, .primary=true, .characteristics=(homekit_characteristic_t*[]){
@@ -133,7 +135,6 @@ homekit_accessory_t *accessories[] = {
 void temperature_sensor_task(void *_args) {
     
     int loop_count = 10;
-    gpio_set_pullup(TEMPERATURE_SENSOR_PIN, false, false);
     
     float humidity_value, temperature_value;
     while (1) {
@@ -143,7 +144,7 @@ void temperature_sensor_task(void *_args) {
                                            );
         
         if (success) {
-            printf("Got readings: temperature %g, humidity %g\n", temperature_value, humidity_value);
+            printf("%s, Got readings: temperature %g, humidity %g\n", __func__, temperature_value, humidity_value);
             current_temperature.value = HOMEKIT_FLOAT(temperature_value);
             current_relative_humidity.value = HOMEKIT_FLOAT(humidity_value);
             
@@ -159,13 +160,13 @@ void temperature_sensor_task(void *_args) {
             
             if (loop_count == 5) {
                 snprintf (post_string, 150, "sql=insert into homekit.humiditysensorlog (HumiditySensorName, Humidity) values ('%s', %f)", accessory_name, humidity_value);
-                printf ("Post String: %s\n", post_string);
+                printf ("%s Post String: %s\n", __func__, post_string);
                 vTaskResume( http_post_tasks_handle );
             }
             
         } else {
             led_code (LED_GPIO, SENSOR_ERROR);
-            printf("Couldnt read data from sensor DHT22\n");
+            printf("%s Couldnt read data from sensor DHT22\n", __func__);
         }
         vTaskDelay(TEMPERATURE_POLL_PERIOD / portTICK_PERIOD_MS);
         loop_count++;
@@ -173,7 +174,7 @@ void temperature_sensor_task(void *_args) {
 }
 
 void temperature_sensor_init() {
-    xTaskCreate(temperature_sensor_task, "Temperature", 256, NULL, 2, NULL);
+    xTaskCreate(temperature_sensor_task, "Temperature", 512, NULL, tskIDLE_PRIORITY, NULL);
 }
 
 
@@ -186,28 +187,26 @@ void motion_sensor_callback(uint8_t gpio) {
         motion_detected.value = HOMEKIT_BOOL(new);
         homekit_characteristic_notify(&motion_detected, HOMEKIT_BOOL(new));
         if (new == 1) {
-            printf("Motion Detected on %d\n", gpio);
+            printf("%s Motion Detected on %d\n", __func__, gpio);
             snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 1)", accessory_name);
-            printf ("Post String: %s\n", post_string);
+            printf ("%s Post String: %s\n", __func__,post_string);
             vTaskResume( http_post_tasks_handle );
         } else {
-            printf("Motion Stopped on %d\n", gpio);
+            printf("%s Motion Stopped on %d\n", __func__,gpio);
             snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 0)", accessory_name);
-            printf ("Post String: %s\n", post_string);
+            printf ("%s Post String: %s\n", __func__,post_string);
             vTaskResume( http_post_tasks_handle );
         }
     }
     else {
         led_code (LED_GPIO, GENERIC_ERROR);
-        printf("Interrupt on %d", gpio);
+        printf("%s Interrupt on %d", __func__,gpio);
     }
     
 }
 
 void motion_sensor_init() {
     
-    gpio_enable(MOTION_SENSOR_GPIO, GPIO_INPUT);
-    gpio_set_pullup(MOTION_SENSOR_GPIO, false, false);
     gpio_set_interrupt(MOTION_SENSOR_GPIO, GPIO_INTTYPE_EDGE_ANY, motion_sensor_callback);
 }
 
@@ -238,17 +237,14 @@ void light_sensor_task(void *_args) {
 }
 
 void light_sensor_init() {
-    xTaskCreate(light_sensor_task, "Light Sensor", 512, NULL, 2, NULL);
+    xTaskCreate(light_sensor_task, "Light Sensor", 512, NULL, tskIDLE_PRIORITY, NULL);
 }
 
 void multi_sensor_init (){
  
-    xTaskCreate(http_post_task, "http post task", 512, NULL, 2, &http_post_tasks_handle);
-    light_sensor_init();
-    gpio_set_pullup(MOTION_SENSOR_GPIO, false, false);
-    gpio_enable(LED_GPIO, GPIO_OUTPUT);
-    gpio_write(LED_GPIO, false);
+    printf ("Muti Sensor Init \n");
 
+    xTaskCreate(http_post_task, "http post task", 512, NULL, tskIDLE_PRIORITY, &http_post_tasks_handle);
     light_sensor_init();
     motion_sensor_init();
     temperature_sensor_init();
@@ -272,15 +268,33 @@ void accessory_init_not_paired (void) {
 }
 
 
+
+void gpio_init (void){
+    
+    printf ("GPIO Init\n");
+    adv_button_create(RESET_BUTTON_GPIO, true, false);
+    adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, VERYLONGPRESS_TYPE, NULL, 0);
+
+    gpio_enable(MOTION_SENSOR_GPIO, GPIO_INPUT);
+    gpio_set_pullup(MOTION_SENSOR_GPIO, false, false);
+
+    gpio_enable(LED_GPIO, GPIO_OUTPUT);
+    gpio_write(LED_GPIO, false);
+    
+    gpio_enable(TEMPERATURE_SENSOR_PIN, GPIO_INPUT);
+    gpio_set_pullup(TEMPERATURE_SENSOR_PIN, false, false);
+    
+}
+
+
 void user_init(void) {
 
     
     standard_init (&name, &manufacturer, &model, &serial, &revision);
-    strcpy (accessory_name, name.value.string_value);
-    
-    adv_button_create(RESET_BUTTON_GPIO, true, false);
-    adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, VERYLONGPRESS_TYPE, NULL, 0);
 
+    gpio_init ();
+    
+    strcpy (accessory_name, name.value.string_value);
 
     wifi_config_init(DEVICE_NAME, NULL, on_wifi_ready);
 
