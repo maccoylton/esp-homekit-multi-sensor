@@ -69,6 +69,8 @@ char accessory_name[64];
 
 homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
 homekit_characteristic_t wifi_check_interval   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_CHECK_INTERVAL, 10, .setter=wifi_check_interval_set);
+homekit_characteristic_t task_stats   = HOMEKIT_CHARACTERISTIC_(CUSTOM_TASK_STATS, false , .setter=task_stats_set);
+
 homekit_characteristic_t ota_trigger      = API_OTA_TRIGGER;
 homekit_characteristic_t name             = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
 homekit_characteristic_t manufacturer     = HOMEKIT_CHARACTERISTIC_(MANUFACTURER,  DEVICE_MANUFACTURER);
@@ -109,6 +111,7 @@ homekit_accessory_t *accessories[] = {
             &ota_trigger,
             &wifi_reset,
             &wifi_check_interval,
+            &task_stats,
             NULL
         }),
         HOMEKIT_SERVICE(MOTION_SENSOR, .primary=true, .characteristics=(homekit_characteristic_t*[]){
@@ -174,7 +177,7 @@ void temperature_sensor_task(void *_args) {
 }
 
 void temperature_sensor_init() {
-    xTaskCreate(temperature_sensor_task, "Temperature", 512, NULL, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(temperature_sensor_task, "Temperature", 512, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 
@@ -237,14 +240,14 @@ void light_sensor_task(void *_args) {
 }
 
 void light_sensor_init() {
-    xTaskCreate(light_sensor_task, "Light Sensor", 512, NULL, tskIDLE_PRIORITY, NULL);
+    xTaskCreate(light_sensor_task, "Light Sensor", 512, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 void multi_sensor_init (){
  
     printf ("Muti Sensor Init \n");
 
-    xTaskCreate(http_post_task, "http post task", 512, NULL, tskIDLE_PRIORITY, &http_post_tasks_handle);
+    xTaskCreate(http_post_task, "http post task", 512, NULL, tskIDLE_PRIORITY+1, &http_post_tasks_handle);
     light_sensor_init();
     motion_sensor_init();
     temperature_sensor_init();
