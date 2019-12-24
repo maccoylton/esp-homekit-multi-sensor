@@ -1,1 +1,3 @@
-# esp-homekit-light-sensor
+# esp-homekit-multi-sensor 
+
+Light, Temperature, Humidity and Motion Sensor. 
