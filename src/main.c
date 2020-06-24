@@ -70,6 +70,8 @@ char accessory_name[64];
 homekit_characteristic_t wifi_reset   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_RESET, false, .setter=wifi_reset_set);
 homekit_characteristic_t wifi_check_interval   = HOMEKIT_CHARACTERISTIC_(CUSTOM_WIFI_CHECK_INTERVAL, 10, .setter=wifi_check_interval_set);
 homekit_characteristic_t task_stats   = HOMEKIT_CHARACTERISTIC_(CUSTOM_TASK_STATS, false , .setter=task_stats_set);
+homekit_characteristic_t ota_beta     = HOMEKIT_CHARACTERISTIC_(CUSTOM_OTA_BETA, false, .setter=ota_beta_set);
+homekit_characteristic_t lcm_beta    = HOMEKIT_CHARACTERISTIC_(CUSTOM_LCM_BETA, false, .setter=lcm_beta_set);
 
 homekit_characteristic_t ota_trigger      = API_OTA_TRIGGER;
 homekit_characteristic_t name             = HOMEKIT_CHARACTERISTIC_(NAME, DEVICE_NAME);
@@ -112,6 +114,8 @@ homekit_accessory_t *accessories[] = {
             &wifi_reset,
             &wifi_check_interval,
             &task_stats,
+            &ota_beta,
+            &lcm_beta,
             NULL
         }),
         HOMEKIT_SERVICE(MOTION_SENSOR, .primary=true, .characteristics=(homekit_characteristic_t*[]){
@@ -147,7 +151,7 @@ void temperature_sensor_task(void *_args) {
                                            );
         
         if (success) {
-            printf("%s, Got readings: temperature %g, humidity %g\n", __func__, temperature_value, humidity_value);
+            printf("%s: Got readings: temperature %g, humidity %g\n", __func__, temperature_value, humidity_value);
             current_temperature.value = HOMEKIT_FLOAT(temperature_value);
             current_relative_humidity.value = HOMEKIT_FLOAT(humidity_value);
             
@@ -156,20 +160,20 @@ void temperature_sensor_task(void *_args) {
             
             if (loop_count == 10) {
                 snprintf (post_string, 150, "sql=insert into homekit.temperaturesensorlog (TemperatureSensorName, Temperature) values ('%s', %f)", accessory_name, temperature_value);
-                printf ("Post String: %s\n", post_string);
+                printf ("%s: Post String: %s\n", __func__, post_string);
                 vTaskResume( http_post_tasks_handle );
                 loop_count = 0;
             }
             
             if (loop_count == 5) {
                 snprintf (post_string, 150, "sql=insert into homekit.humiditysensorlog (HumiditySensorName, Humidity) values ('%s', %f)", accessory_name, humidity_value);
-                printf ("%s Post String: %s\n", __func__, post_string);
+                printf ("%s: Post String: %s\n", __func__, post_string);
                 vTaskResume( http_post_tasks_handle );
             }
             
         } else {
             led_code (LED_GPIO, SENSOR_ERROR);
-            printf("%s Couldnt read data from sensor DHT22\n", __func__);
+            printf("%s: Couldnt read data from sensor DHT22\n", __func__);
         }
         vTaskDelay(TEMPERATURE_POLL_PERIOD / portTICK_PERIOD_MS);
         loop_count++;
@@ -190,20 +194,20 @@ void motion_sensor_callback(uint8_t gpio) {
         motion_detected.value = HOMEKIT_BOOL(new);
         homekit_characteristic_notify(&motion_detected, HOMEKIT_BOOL(new));
         if (new == 1) {
-            printf("%s Motion Detected on %d\n", __func__, gpio);
+            printf("%s: Motion Detected on %d\n", __func__, gpio);
             snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 1)", accessory_name);
-            printf ("%s Post String: %s\n", __func__,post_string);
+            printf ("%s: Post String: %s\n", __func__,post_string);
             vTaskResume( http_post_tasks_handle );
         } else {
-            printf("%s Motion Stopped on %d\n", __func__,gpio);
+            printf("%s: Motion Stopped on %d\n", __func__,gpio);
             snprintf (post_string, 150, "sql=insert into homekit.motionsensorlog (MotionSensorName, MotionDetectionState) values ('%s', 0)", accessory_name);
-            printf ("%s Post String: %s\n", __func__,post_string);
+            printf ("%s: Post String: %s\n", __func__,post_string);
             vTaskResume( http_post_tasks_handle );
         }
     }
     else {
         led_code (LED_GPIO, GENERIC_ERROR);
-        printf("%s Interrupt on %d", __func__,gpio);
+        printf("%s: Interrupt on %d", __func__,gpio);
     }
     
 }
@@ -217,7 +221,7 @@ void light_sensor_task(void *_args) {
     
     // thaks to https://github.com/peros550/esp-homekit-multiple-sensors/blob/master/examples/multiple_sensors/multiple_sensors.c
     
-    int loop_count = 10;
+    int loop_count = 60;
     
     uint16_t analog_light_value;
     while (1) {
@@ -227,14 +231,14 @@ void light_sensor_task(void *_args) {
         //In my case I used a Photodiode Light Sensor
         currentAmbientLightLevel.value.float_value = (1024 - analog_light_value);
         homekit_characteristic_notify(&currentAmbientLightLevel, HOMEKIT_FLOAT((1024 - analog_light_value)));
-        printf ("Light level: %i\n", (1024 - analog_light_value));
+        printf ("%s: Light level: %i\n", __func__, (1024 - analog_light_value));
         if (loop_count == 10){
             snprintf (post_string, 150, "sql=insert into homekit.lightsensorlog (LightSensorName, LightLevel) values ('%s', %f)", accessory_name, currentAmbientLightLevel.value.float_value);
-            printf ("Post String: %s\n", post_string);
+            printf ("%s: Post String: %s\n", __func__, post_string);
             vTaskResume( http_post_tasks_handle );
             loop_count = 0;
         }
-        vTaskDelay(30000 / portTICK_PERIOD_MS);
+        vTaskDelay(5000 / portTICK_PERIOD_MS);
         loop_count ++;
     }
 }
@@ -245,7 +249,7 @@ void light_sensor_init() {
 
 void multi_sensor_init (){
  
-    printf ("Muti Sensor Init \n");
+    printf ("%s: Muti Sensor Init \n", __func__);
 
     xTaskCreate(http_post_task, "http post task", 512, NULL, tskIDLE_PRIORITY+1, &http_post_tasks_handle);
     light_sensor_init();
@@ -259,6 +263,18 @@ homekit_server_config_t config = {
     .password = "111-11-111",
     .on_event = on_homekit_event
 };
+
+
+void save_characteristics (  ) {
+    /* called by a timer function to save charactersitics */
+}
+
+
+void recover_from_reset (int reason){
+    /* called if we restarted abnormally */
+    printf ("%s: reason %d\n", __func__, reason);
+}
+
 
 void accessory_init (void ){
     /* initalise anything you don't want started until wifi and pairing is confirmed */
@@ -274,7 +290,7 @@ void accessory_init_not_paired (void) {
 
 void gpio_init (void){
     
-    printf ("GPIO Init\n");
+    printf ("%s: GPIO Init\n", __func__);
     adv_button_create(RESET_BUTTON_GPIO, true, false);
     adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, VERYLONGPRESS_TYPE, NULL, 0);
 
