@@ -181,7 +181,7 @@ void temperature_sensor_task(void *_args) {
 }
 
 void temperature_sensor_init() {
-    xTaskCreate(temperature_sensor_task, "Temperature", 512, NULL, tskIDLE_PRIORITY+1, NULL);
+    xTaskCreate(temperature_sensor_task, "Temperature", 256, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 
@@ -244,7 +244,7 @@ void light_sensor_task(void *_args) {
 }
 
 void light_sensor_init() {
-    xTaskCreate(light_sensor_task, "Light Sensor", 512, NULL, tskIDLE_PRIORITY+1, NULL);
+    xTaskCreate(light_sensor_task, "Light Sensor", 256, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 void multi_sensor_init (){
