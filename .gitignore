@@ -4,3 +4,7 @@ firmware/
 src/.DS_Store
 src/udplog-client
 .DS_Store
+src/latest-pre-release
+src/temp.txt
+
+

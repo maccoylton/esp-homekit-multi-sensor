@@ -181,7 +181,7 @@ void temperature_sensor_task(void *_args) {
 }
 
 void temperature_sensor_init() {
-    xTaskCreate(temperature_sensor_task, "Temperature", 512, NULL, tskIDLE_PRIORITY+1, NULL);
+    xTaskCreate(temperature_sensor_task, "Temperature", 256, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 
@@ -244,17 +244,19 @@ void light_sensor_task(void *_args) {
 }
 
 void light_sensor_init() {
-    xTaskCreate(light_sensor_task, "Light Sensor", 512, NULL, tskIDLE_PRIORITY+1, NULL);
+    xTaskCreate(light_sensor_task, "Light Sensor", 256, NULL, tskIDLE_PRIORITY+1, NULL);
 }
 
 void multi_sensor_init (){
  
-    printf ("%s: Muti Sensor Init \n", __func__);
+    printf ("%s: Start, Heap: %d\n", __func__, xPortGetFreeHeapSize());
 
     xTaskCreate(http_post_task, "http post task", 512, NULL, tskIDLE_PRIORITY+1, &http_post_tasks_handle);
     light_sensor_init();
     motion_sensor_init();
     temperature_sensor_init();
+
+    printf ("%s: End, Heap: %d\n", __func__, xPortGetFreeHeapSize());
 
 }
 
@@ -290,7 +292,7 @@ void accessory_init_not_paired (void) {
 
 void gpio_init (void){
     
-    printf ("%s: GPIO Init\n", __func__);
+    printf ("%s: Start, Heap: %d\n", __func__, xPortGetFreeHeapSize());
     adv_button_create(RESET_BUTTON_GPIO, true, false);
     adv_button_register_callback_fn(RESET_BUTTON_GPIO, reset_button_callback, VERYLONGPRESS_TYPE, NULL, 0);
 
@@ -302,6 +304,8 @@ void gpio_init (void){
     
     gpio_enable(TEMPERATURE_SENSOR_PIN, GPIO_INPUT);
     gpio_set_pullup(TEMPERATURE_SENSOR_PIN, false, false);
+
+    printf ("%s: End, Heap: %d\n", __func__, xPortGetFreeHeapSize());
     
 }
 
